@@ -3,10 +3,11 @@ import boto3
 from picamera2 import Picamera2, Preview
 from datetime import datetime
 import time
+import requests
 
-
-
+EC2_API_URL = "http://56.228.35.90:5000/detect"
 s3 = boto3.client('s3')
+is_monitoring =  False
 
 def upload_to_cloud(file_path, bucket_name, s3_key=None):
     if s3_key is None:
@@ -23,6 +24,18 @@ def upload_to_cloud(file_path, bucket_name, s3_key=None):
         print("Credentials not found")
 
     return False
+
+def trigger_cloud(s3_keys):
+    try:
+        response = requests.post(EC2_API_URL, json={"images":s3_keys})
+        result = response.json()
+        print(f"{result}")
+
+        # if result["results"] == "INTRUDER":
+        #     trigger_alert()
+
+    except Exception as e:
+        print("Failed",e)
 
 def start_monitoring():
     global is_monitoring

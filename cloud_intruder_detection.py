@@ -6,10 +6,13 @@ import time
 import requests
 from rgbmatrix5x5 import RGBMatrix5x5
 import serial
+import threading
+from queue import Queue
 
 EC2_API_URL = "http://56.228.35.90:5000/detect"
 s3 = boto3.client('s3')
 is_monitoring =  False
+image_queue = Queue()
 
 def upload_to_cloud(file_path, bucket_name, s3_key=None):
     if s3_key is None:
@@ -17,7 +20,7 @@ def upload_to_cloud(file_path, bucket_name, s3_key=None):
 
     try:
         s3.upload_file(file_path, bucket_name,s3_key)
-        # print(f"Image Uploaded to s3 cloud {bucket_name}")
+        print(f"Image Uploaded to s3 cloud {bucket_name}")
         return True
 
     except FileNotFoundError:
@@ -27,17 +30,22 @@ def upload_to_cloud(file_path, bucket_name, s3_key=None):
 
     return False
 
-def trigger_cloud(s3_keys):
-    try:
-        response = requests.post(EC2_API_URL, json={"images":s3_keys})
-        result = response.json()
-        print(f"{result}")
+def trigger_cloud():
 
-        if result["results"] == "INTRUDER":
-            trigger_alert()
+    while True:
+        images = image_queue.get()
+        if images:
+            try:
+                response = requests.post(EC2_API_URL, json={"images":images})
+                result = response.json()
+                print(f"{result}")
 
-    except Exception as e:
-        print("Failed",e)
+                if result["results"] == "INTRUDER":
+                    trigger_alert()
+
+            except Exception as e:
+                print("Failed",e)
+        image_queue.task_done()
 
 def trigger_alert():
     rgbmatrix = RGBMatrix5x5()
@@ -73,19 +81,22 @@ def start_monitoring():
         if key:
             s3_keys.append(f"{filename}.jpg")
 
-        # print(f"Image {i} is captured")
+        print(f"Image {i} is captured")
         time.sleep(1)
     print("all images sent to cloud")
     capture_end_time = time.time()                                      # overall end time of image capturing
     picam.stop_preview()
     picam.close()
 
-    if s3_keys:
-        trigger_cloud(s3_keys)
+    image_queue.put(s3_keys)
+
+    # if s3_keys:
+    #     trigger_cloud(s3_keys)
 
     is_monitoring = False
 
 if __name__ == "__main__":
+    threading.Thread(target=trigger_cloud(), daemon=True).start()
     serial_port = serial.Serial('/dev/rfcomm0', baudrate=9600, timeout=1)
 
     print("Starting bluetooth")
@@ -94,4 +105,5 @@ if __name__ == "__main__":
         motion_status = serial_port.readline().decode('utf-8').strip()
         if motion_status == "MOTION_DETECTED" and not is_monitoring:
             print("PIR detects motion and now camera will be open")
-            start_monitoring()
+            threading.Thread(target=start_monitoring()).start()
+            # start_monitoring()

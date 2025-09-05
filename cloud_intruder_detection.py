@@ -4,6 +4,7 @@ from picamera2 import Picamera2, Preview
 from datetime import datetime
 import time
 import requests
+from rgbmatrix5x5 import RGBMatrix5x5
 import serial
 
 EC2_API_URL = "http://56.228.35.90:5000/detect"
@@ -32,11 +33,20 @@ def trigger_cloud(s3_keys):
         result = response.json()
         print(f"{result}")
 
-        # if result["results"] == "INTRUDER":
-        #     trigger_alert()
+        if result["results"] == "INTRUDER":
+            trigger_alert()
 
     except Exception as e:
         print("Failed",e)
+
+def trigger_alert():
+    rgbmatrix = RGBMatrix5x5()
+    rgbmatrix.set_all(255, 0, 0)
+    rgbmatrix.show()
+
+    time.sleep(10)
+    rgbmatrix.clear()
+    rgbmatrix.show()
 
 def start_monitoring():
     global is_monitoring
@@ -55,7 +65,7 @@ def start_monitoring():
     for i in range(10):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = "image_" + timestamp + "_" + str(i)
-        image_location = f"/home/pi/object_detection/Images/{filename}.jpg"
+        image_location = f"/home/pi/cloud_Intruder_Detection_System/Images/{filename}.jpg"
         image_paths.append(image_location)
         picam.capture_file(image_location)
         key = upload_to_cloud(image_location, "intruder-detection-images")
@@ -70,13 +80,9 @@ def start_monitoring():
     picam.stop_preview()
     picam.close()
 
-    print(s3_keys)
-
     if s3_keys:
         trigger_cloud(s3_keys)
 
-
-    # image_queue.append(image_paths)
     is_monitoring = False
 
 if __name__ == "__main__":

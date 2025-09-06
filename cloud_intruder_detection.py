@@ -14,21 +14,30 @@ s3 = boto3.client('s3')
 is_monitoring =  False
 image_queue = Queue()
 
-def upload_to_cloud(file_path, bucket_name, s3_key=None):
-    if s3_key is None:
+def upload_to_cloud(file_paths, bucket_name):
+    filenames = []
+
+    for file_path in file_paths:
         s3_key = os.path.basename(file_path)
+        try:
+            s3.upload_file(file_path, bucket_name,s3_key)
+            filenames.append(s3_key)
 
-    try:
-        s3.upload_file(file_path, bucket_name,s3_key)
-        print(f"Image Uploaded to s3 cloud {bucket_name}")
-        return True
+        except FileNotFoundError:
+            print("File not found")
+        except NoCredentialsError:
+            print("Credentials not found")
+    
+    image_queue.put(filenames)
 
-    except FileNotFoundError:
-        print("File not found")
-    except NoCredentialsError:
-        print("Credentials not found")
+    # if s3_key is None:
+    #     s3_key = os.path.basename(file_path)
 
-    return False
+    # try:
+    #     s3.upload_file(file_path, bucket_name,s3_key)
+    #     print(f"Image Uploaded to s3 cloud {bucket_name}")
+    #     return True
+    # return False
 
 def trigger_cloud():
 
@@ -48,13 +57,14 @@ def trigger_cloud():
         image_queue.task_done()
 
 def trigger_alert():
-    rgbmatrix = RGBMatrix5x5()
-    rgbmatrix.set_all(255, 0, 0)
-    rgbmatrix.show()
+    print("INTRUDERRRRRRR !!!!")
+    # rgbmatrix = RGBMatrix5x5()
+    # rgbmatrix.set_all(255, 0, 0)
+    # rgbmatrix.show()
 
-    time.sleep(10)
-    rgbmatrix.clear()
-    rgbmatrix.show()
+    # time.sleep(10)
+    # rgbmatrix.clear()
+    # rgbmatrix.show()
 
 def start_monitoring():
     global is_monitoring
@@ -66,7 +76,7 @@ def start_monitoring():
     print("I AM CAPTURING")
     print("\n")
     image_paths = []
-    s3_keys = []
+    # filenames = []
 
     capture_start_time = time.time()                                     # overall start time of image capturing
 
@@ -76,11 +86,10 @@ def start_monitoring():
         image_location = f"/home/pi/cloud_Intruder_Detection_System/Images/{filename}.jpg"
         image_paths.append(image_location)
         picam.capture_file(image_location)
-        key = upload_to_cloud(image_location, "intruder-detection-images")
+        # key = upload_to_cloud(image_location, "intruder-detection-images")
 
-        if key:
-            s3_keys.append(f"{filename}.jpg")
-
+        # if key:
+        #     filenames.append(f"{filename}.jpg")
         print(f"Image {i} is captured")
         time.sleep(1)
     print("all images sent to cloud")
@@ -88,15 +97,19 @@ def start_monitoring():
     picam.stop_preview()
     picam.close()
 
-    image_queue.put(s3_keys)
+    threading.Thread(target=upload_to_cloud(image_paths,"intruder-detection-images")).start()
+
+    # image_queue.put(s3_keys)
 
     # if s3_keys:
     #     trigger_cloud(s3_keys)
-
+    serial_port.reset_input_buffer()
     is_monitoring = False
 
 if __name__ == "__main__":
-    threading.Thread(target=trigger_cloud(), daemon=True).start()
+    print("HEllo")
+    threading.Thread(target=trigger_cloud, daemon=True).start()
+    print("world")
     serial_port = serial.Serial('/dev/rfcomm0', baudrate=9600, timeout=1)
 
     print("Starting bluetooth")
@@ -105,5 +118,5 @@ if __name__ == "__main__":
         motion_status = serial_port.readline().decode('utf-8').strip()
         if motion_status == "MOTION_DETECTED" and not is_monitoring:
             print("PIR detects motion and now camera will be open")
-            threading.Thread(target=start_monitoring()).start()
-            # start_monitoring()
+            # threading.Thread(target=start_monitoring()).start()
+            start_monitoring()
